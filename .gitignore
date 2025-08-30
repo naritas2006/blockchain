@@ -12,18 +12,13 @@ build/
 # smart contract artifacts
 autonomix-contracts/artifacts/
 autonomix-contracts/cache/
+
 # production
-/build
-node_modules/
-build/
-artifacts/
 .env
 dist/
 
-
 # misc
 .DS_Store
-.env
 .env.local
 .env.development.local
 .env.test.local
