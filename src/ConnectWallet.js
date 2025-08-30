@@ -23,3 +23,4 @@ export async function connectWallet() {
     alert("MetaMask not found! Install MetaMask extension.");
   }
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
