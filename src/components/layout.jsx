@@ -21,6 +21,8 @@ export default function Layout() {
           <a href="/map" className="hover:text-blush transition">Map</a>
           <a href="/alerts" className="hover:text-blush transition">Alerts</a>
           <a href="/admin" className="hover:text-blush transition">Admin</a>
+          <a href="/explorer" className="hover:text-blush transition">Explorer</a>
+          <a href="/validators" className="hover:text-blush transition">Validators</a>
           <a href="/about" className="hover:text-blush transition">About</a>
         </div>
 

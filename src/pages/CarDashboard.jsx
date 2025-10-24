@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { ethers } from 'ethers';
 import { useWallet } from '../context/WalletContext';
 import EventForm from '../components/EventForm';
 import DebugEvents from '../pages/DebugEvents';
+import AutonomixDPoS_ABI from '../contracts/AutonomixDPoS.json';
+
+const DPOS_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
 
 const fadeIn = {
@@ -13,6 +17,7 @@ const fadeIn = {
 export default function CarDashboard() {
   const { wallet, connectWallet, disconnectWallet, contract } = useWallet();
   const [events, setEvents] = useState([]);
+  const [dposTransactions, setDposTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // --- FETCH EVENTS SAFELY ---
@@ -60,13 +65,45 @@ export default function CarDashboard() {
     }
   };
 
+  const fetchDposTransactions = async () => {
+    if (!wallet || !window.ethereum) return;
+    setLoading(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const dposContract = new ethers.Contract(DPOS_CONTRACT_ADDRESS, AutonomixDPoS_ABI, provider);
+
+      // For now, we'll fetch all registered delegates and assume they are DPoS transactions.
+      // In a real scenario, you'd likely have events emitted for stake/unstake operations.
+      const registeredDelegates = await dposContract.registeredDelegates();
+      const fetchedTransactions = [];
+
+      for (const delegateAddress of registeredDelegates) {
+        const stake = await dposContract.delegateStake(delegateAddress);
+        fetchedTransactions.push({
+          type: 'Stake',
+          address: delegateAddress,
+          amount: ethers.formatEther(stake),
+          timestamp: 'N/A' // Placeholder, as we don't have event timestamps here
+        });
+      }
+      setDposTransactions(fetchedTransactions);
+    } catch (error) {
+      console.error('Error fetching DPoS transactions:', error);
+    }
+    setLoading(false);
+  };
+
   // --- EFFECTS ---
   useEffect(() => {
     testEvent();
   }, [contract]);
 
   useEffect(() => {
-    if (wallet && contract) fetchEvents();
+    if (wallet && contract) {
+      fetchEvents();
+      fetchDposTransactions();
+    }
   }, [wallet, contract]);
 
   // --- RENDER ---
@@ -134,6 +171,42 @@ export default function CarDashboard() {
                     <tr>
                       <td colSpan="4" className="border border-violet text-center py-2">
                         No events yet
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold text-center text-blush mb-4">🗳️ DPoS Transactions</h2>
+            {loading ? (
+              <p className="text-center text-white">Loading DPoS transactions...</p>
+            ) : (
+              <table className="w-full table-auto border-collapse border border-violet">
+                <thead>
+                  <tr>
+                    <th className="border border-violet px-2 py-1">Type</th>
+                    <th className="border border-violet px-2 py-1">Address</th>
+                    <th className="border border-violet px-2 py-1">Amount</th>
+                    <th className="border border-violet px-2 py-1">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dposTransactions.length ? (
+                    dposTransactions.map((tx, idx) => (
+                      <tr key={idx}>
+                        <td className="border border-violet px-2 py-1">{tx.type}</td>
+                        <td className="border border-violet px-2 py-1">{tx.address}</td>
+                        <td className="border border-violet px-2 py-1">{tx.amount}</td>
+                        <td className="border border-violet px-2 py-1">{tx.timestamp}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="border border-violet text-center py-2">
+                        No DPoS transactions yet
                       </td>
                     </tr>
                   )}

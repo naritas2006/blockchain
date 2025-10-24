@@ -6,6 +6,8 @@ import MapView from './pages/MapView';
 import AdminPanel from './pages/AdminPanel';
 import About from './pages/About';
 import Signup from './pages/Signup';
+import BlockchainExplorer from './pages/BlockchainExplorer';
+import Validators from './pages/Validators';
 import Layout from './components/layout';
 
 function App() {
@@ -19,6 +21,8 @@ function App() {
         <Route path="map" element={<MapView />} />
         <Route path="admin" element={<AdminPanel />} />
         <Route path="about" element={<About />} />
+        <Route path="explorer" element={<BlockchainExplorer />} />
+        <Route path="validators" element={<Validators />} />
       </Route>
 
       {/* Page without NavBar */}
