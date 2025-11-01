@@ -39,13 +39,25 @@ export default function CarDashboard() {
       console.log("📦 All Data Blocks:", allData);
 
       // Convert into readable format
-      const formatted = allData.map((d) => ({
-        carAddress: d.carAddress,
-        metadata: d.metadata,
-        dataHash: d.dataHash,
-        verified: d.verified,
-        timestamp: new Date(Number(d.timestamp) * 1000).toLocaleString(),
-      }));
+      const formatted = allData.map((d) => {
+        let parsedMetadata = {};
+        try {
+          parsedMetadata = JSON.parse(d.metadata);
+        } catch {
+          // Fallback if metadata isn't JSON, though it should be now.
+          parsedMetadata = { eventType: 'N/A', vehicleId: d.metadata };
+        }
+
+        return {
+          carAddress: d.carAddress,
+          eventType: parsedMetadata.eventType || 'N/A',
+          vehicleId: parsedMetadata.vehicleId || 'N/A',
+          dataHash: d.dataHash,
+          timestamp: new Date(Number(d.timestamp) * 1000),
+          verified: d.verified,
+          ipfsHash: d.ipfsHash, // ipfsHash is now the hash of the eventData
+        };
+      });
 
       setDataBlocks(formatted);
     } catch (error) {
@@ -138,11 +150,45 @@ const uploadData = async (metadata, ipfsHash) => {
 };
 
 
+
+
   // --- EFFECTS ---
   useEffect(() => {
     if (wallet && contracts) {
       fetchEvents();
       fetchDposTransactions();
+
+      const dataShareContract = contracts.dataShare;
+
+      const onDataUploaded = (carAddress, metadata, dataHash, verified, timestamp, ipfsHash) => {
+        console.log("⚡️ New DataUploaded event:", { carAddress, metadata, dataHash, verified, timestamp, ipfsHash });
+
+        let parsedMetadata = {};
+        try {
+          parsedMetadata = JSON.parse(metadata);
+        } catch {
+          parsedMetadata = { eventType: 'N/A', vehicleId: metadata };
+        }
+
+        setDataBlocks((prevBlocks) => [
+          {
+            carAddress,
+            eventType: parsedMetadata.eventType || 'N/A',
+            vehicleId: parsedMetadata.vehicleId || 'N/A',
+            dataHash,
+            timestamp: new Date(Number(timestamp) * 1000),
+            verified,
+            ipfsHash,
+          },
+          ...prevBlocks,
+        ]);
+      };
+
+      dataShareContract.on('DataUploaded', onDataUploaded);
+
+      return () => {
+        dataShareContract.off('DataUploaded', onDataUploaded);
+      };
     }
   }, [wallet, contracts, fetchEvents, fetchDposTransactions]);
 
@@ -182,44 +228,31 @@ const uploadData = async (metadata, ipfsHash) => {
       {wallet && (
         <>
           <EventForm onEventSubmitted={fetchEvents} />
+          {/* <MapSimulation dataBlocks={dataBlocks} /> */}
           <div className="mt-8">
             <h2 className="text-2xl font-bold text-center text-blush mb-4">📦 Uploaded Data Records</h2>
 
             {loading ? (
               <p className="text-center text-white">Loading data records...</p>
             ) : (
-              <table className="w-full table-auto border-collapse border border-violet">
-                <thead>
-                  <tr>
-                    <th className="border border-violet px-2 py-1">Car Address</th>
-                    <th className="border border-violet px-2 py-1">Metadata</th>
-                    <th className="border border-violet px-2 py-1">Data Hash</th>
-                    <th className="border border-violet px-2 py-1">Verified</th>
-                    <th className="border border-violet px-2 py-1">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dataBlocks.length ? (
-                    dataBlocks.map((b, idx) => (
-                      <tr key={idx}>
-                        <td className="border border-violet px-2 py-1">{b.carAddress}</td>
-                        <td className="border border-violet px-2 py-1">{b.metadata}</td>
-                        <td className="border border-violet px-2 py-1">{b.dataHash}</td>
-                        <td className="border border-violet px-2 py-1">
-                          {b.verified ? "✅ Yes" : "❌ No"}
-                        </td>
-                        <td className="border border-violet px-2 py-1">{b.timestamp}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="5" className="border border-violet text-center py-2">
-                        No data uploaded yet
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {dataBlocks.length > 0 ? (
+                  dataBlocks.map((block, index) => (
+                    <div key={index} className="bg-white p-4 rounded-lg shadow-md border border-violet">
+                      <p className="text-lg font-semibold text-blush">
+                        Event Type: {block.eventType}
+                      </p>
+                      <p>Vehicle ID: {block.vehicleId}</p>
+                      <p>Car Address: {block.carAddress}</p>
+                      <p>Timestamp: {block.timestamp.toLocaleString()}</p>
+                      <p>Verified: {block.verified ? '✅ Yes' : '❌ No'}</p>
+                      {block.ipfsHash && <p>IPFS Hash: {block.ipfsHash}</p>}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-gray-500 col-span-full">No data uploaded yet.</p>
+                )}
+              </div>
             )}
           </div>
 
