@@ -95,29 +95,53 @@ contract AutonomixDPoS is Ownable {
     // -------------------------------------------
     // 🔸 VALIDATOR ELECTION (unchanged)
     // -------------------------------------------
-    function electValidators() public onlyOwner {
-        require(block.timestamp >= lastElectionTime + ELECTION_PERIOD_SECONDS, "Election period not over yet");
+    function getRegisteredDelegates() public view returns (address[] memory) {
+        return registeredDelegates;
+    }
 
-        for (uint i = 0; i < currentValidators.length; i++) {
+    function getCurrentValidators() public view returns (address[] memory) {
+        return currentValidators;
+    }
+
+    function electValidators() public onlyOwner {
+        require(registeredDelegates.length > 0, "No delegates registered");
+
+        // Reset previous validators cleanly
+        for (uint256 i = 0; i < currentValidators.length; i++) {
             delegates[currentValidators[i]].isValidator = false;
         }
-        currentValidators = new address[](0) ;
+        currentValidators = new address[](0);
 
-        address[] memory sortableDelegates = registeredDelegates;
+        // Create a memory copy for sorting
+        uint256 n = registeredDelegates.length;
+        address[] memory sortable = new address[](n);
+        for (uint256 i = 0; i < n; i++) {
+            sortable[i] = registeredDelegates[i];
+        }
 
-        for (uint i = 0; i < sortableDelegates.length; i++) {
-            for (uint j = i + 1; j < sortableDelegates.length; j++) {
-                if (delegates[sortableDelegates[i]].totalStaked < delegates[sortableDelegates[j]].totalStaked) {
-                    address temp = sortableDelegates[i];
-                    sortableDelegates[i] = sortableDelegates[j];
-                    sortableDelegates[j] = temp;
+        // Simple selection sort (ok for small n). Sorting by totalStaked desc
+        for (uint256 i = 0; i < n; i++) {
+            uint256 maxIdx = i;
+            for (uint256 j = i + 1; j < n; j++) {
+                if (delegates[sortable[j]].totalStaked > delegates[sortable[maxIdx]].totalStaked) {
+                    maxIdx = j;
                 }
+            }
+            // swap
+            if (maxIdx != i) {
+                address tmp = sortable[i];
+                sortable[i] = sortable[maxIdx];
+                sortable[maxIdx] = tmp;
             }
         }
 
-        for (uint i = 0; i < sortableDelegates.length && currentValidators.length < MAX_VALIDATORS; i++) {
-            currentValidators.push(sortableDelegates[i]);
-            delegates[sortableDelegates[i]].isValidator = true;
+        // How many validators to pick
+        uint256 pick = n < MAX_VALIDATORS ? n : MAX_VALIDATORS;
+
+        // Initialize storage array with exact size to avoid push quirks
+        for (uint256 i = 0; i < pick; i++) {
+            currentValidators.push(sortable[i]);
+            delegates[sortable[i]].isValidator = true;
         }
 
         lastElectionTime = block.timestamp;
@@ -225,10 +249,6 @@ contract AutonomixDPoS is Ownable {
             }
         }
         return false;
-    }
-
-    function getcurrentValidators() public view returns (address[] memory) {
-        return currentValidators;
     }
 
     function addTestValidator(address _validatorAddress) public onlyOwner {

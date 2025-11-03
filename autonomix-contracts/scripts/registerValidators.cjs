@@ -1,13 +1,17 @@
 const hre = require("hardhat");
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env.validator") });
 const { ethers } = hre;
+
 const DPoSArtifact = require("../artifacts/contracts/AutonomixDPoS.sol/AutonomixDPoS.json");
 const TokenArtifact = require("../artifacts/contracts/AUTOXToken.sol/AUTOXToken.json");
 
 async function main() {
+  const [deployer] = await ethers.getSigners();
   const provider = new ethers.JsonRpcProvider(process.env.ALCHEMY_API_URL);
-  const dposAddress = "0xACA9492685809C431995e9591364165001A59583"; // your deployed contract
-  const tokenAddress = "0x693cf8cb08d57C19139C96D59e7DbC28460FD2A6"; // replace this with deployed token address
+  const contractAddresses = require(path.resolve(__dirname, "../contracts/contractAddress.json"));
+  const dposAddress = contractAddresses.AutonomixDPoS;
+  const tokenAddress = contractAddresses.AUTOXToken;
 
   const DPoS = new ethers.Contract(dposAddress, DPoSArtifact.abi, provider);
   const AUTOX = new ethers.Contract(tokenAddress, TokenArtifact.abi, provider);
@@ -34,11 +38,30 @@ async function main() {
 
     // Step 2: Stake tokens (each validator stakes for itself)
     const dposWithSigner = DPoS.connect(wallet);
-    const tx = await dposWithSigner.stake(wallet.address, stakeAmount);
-    await tx.wait();
-
+    const stakeTx = await dposWithSigner.stake(wallet.address, stakeAmount);
+    await stakeTx.wait();
     console.log(`✅ Validator ${wallet.address} staked successfully.`);
   }
+
+    const dposWithDeployer = DPoS.connect(deployer);
+
+    console.log("owner:", await DPoS.owner());
+
+    console.log("\nChecking registered delegates' stake...");
+    const regs = await DPoS.getRegisteredDelegates();
+    for (const a of regs) {
+        console.log(a, "staked:", (await DPoS.getDelegateTotalStaked(a)).toString());
+    }
+
+    console.log("\nChecking current validators before election:", (await DPoS.getCurrentValidators()).length);
+
+    console.log("⚙️ Electing validators...");
+    const electTx = await dposWithDeployer.electValidators();
+    const receipt = await electTx.wait();
+    console.log("Election transaction status:", receipt.status === 1 ? "Success" : "Reverted");
+    console.log("Election transaction hash:", electTx.hash);
+    console.log("✅ Validators elected successfully!");
+    console.log("👥 Current validators after election:", (await DPoS.getCurrentValidators()).length);
 }
 
 main().catch((err) => {
