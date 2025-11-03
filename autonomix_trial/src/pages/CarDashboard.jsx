@@ -139,6 +139,7 @@ const uploadData = async (metadata, ipfsHash) => {
 
     const dataHash = ethers.keccak256(ethers.toUtf8Bytes(ipfsHash));
     const tx = await dataSharing.uploadData(metadata, dataHash);
+    console.log("Transaction hash:", tx.hash);
     await tx.wait();
 
     alert("✅ Data uploaded successfully!");

@@ -32,7 +32,7 @@ export function WalletProvider({ children }) {
               chainId: SEPOLIA_CHAIN_ID,
               chainName: 'Sepolia Test Network',
               nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
-              rpcUrls: ['https://sepolia.infura.io/v3/'], // replace with your Infura/Alchemy URL
+              rpcUrls: ['https://sepolia.infura.io/v3/YOUR_PROJECT_ID'], // replace with Infura/Alchemy URL
               blockExplorerUrls: ['https://sepolia.etherscan.io'],
             },
           ],
@@ -51,14 +51,14 @@ export function WalletProvider({ children }) {
     }
 
     try {
-      await switchToSepolia(); // ensure Sepolia network
+      await switchToSepolia();
 
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const _provider = new ethers.BrowserProvider(window.ethereum);
       const _signer = await _provider.getSigner();
       const _wallet = accounts[0];
 
-      // ✅ Initialize both contracts
+      // ✅ Initialize both contracts correctly
       const dataShareContract = new ethers.Contract(
         contractAddress.AutonomixDataShare,
         AutonomixABI.abi,
@@ -67,7 +67,7 @@ export function WalletProvider({ children }) {
 
       const dposContract = new ethers.Contract(
         contractAddress.AutonomixDPoS,
-        DPOS,
+        DPOS.abi, // ✅ fixed here
         _signer
       );
 
@@ -131,7 +131,6 @@ export function WalletProvider({ children }) {
     }
   }, [connectWallet, disconnectWallet, switchToSepolia]);
 
-  // --- Provide Context ---
   return (
     <WalletContext.Provider
       value={{
@@ -148,7 +147,6 @@ export function WalletProvider({ children }) {
   );
 }
 
-// --- Custom Hook for Easy Access ---
 export function useWallet() {
   return useContext(WalletContext);
 }

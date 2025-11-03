@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
 
-import DPoSABI from "../../src/context/AutonomixDPoS.json";
+import DPoSABI from "../contracts/AutonomixDPoS.json";
 import AUTOXTokenABI from "../contracts/AUTOXToken.json";
 import contractAddress from "../contracts/contractAddress.json";
 
@@ -17,7 +17,7 @@ const Validators = () => {
 
   const { signer, provider, contracts, connectWallet } = useWallet();
 
-  const contractAddressDPoS = "0xACA9492685809C431995e9591364165001A59583"; // replace with your deployed AutonomixDPoS address
+  // const contractAddressDPoS = "0xACA9492685809C431995e9591364165001A59583"; // replace with your deployed AutonomixDPoS address
   const autoxTokenAddress = contractAddress.AUTOXToken;
 
   useEffect(() => {
@@ -61,7 +61,7 @@ const Validators = () => {
       setAccount(userAddr);
 
       // ✅ correct function call (case sensitive)
-      const validatorAddresses = await contracts.dpos.getcurrentValidators();
+      const validatorAddresses = await contracts.dpos.getCurrentValidators();
 
       console.log("Fetched validators:", validatorAddresses);
       setValidators(validatorAddresses);
@@ -83,10 +83,10 @@ const Validators = () => {
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const dposContract = new ethers.Contract(contractAddressDPoS, DPoSABI.abi, signer);
+      // const dposContract = new ethers.Contract(contractAddressDPoS, DPoSABI.abi, signer);
 
       // ✅ this function exists in your contract
-      const tx = await dposContract.addTestValidator(account);
+      const tx = await contracts.dpos.addTestValidator(account);
       await tx.wait();
 
       setMessage("Test validator added successfully!");

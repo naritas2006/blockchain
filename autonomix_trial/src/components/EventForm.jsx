@@ -26,6 +26,7 @@ export default function EventForm({ onEventSubmitted }) {
 
       // Send transaction: metadata is vehicleId (string), dataHash is the unique hash
       const tx = await contracts.dataShare.uploadData(eventData, dataHashBytes32);
+      console.log("Transaction hash:", tx.hash);
       await tx.wait();
 
       alert('Event logged successfully!');
