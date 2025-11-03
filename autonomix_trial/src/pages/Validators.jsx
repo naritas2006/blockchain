@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
 
@@ -11,40 +11,24 @@ const Validators = () => {
   const [account, setAccount] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [dataSubmissions, setDataSubmissions] = useState([]); // New state for data submissions
   const [stakeAmount, setStakeAmount] = useState(""); // New state for stake amount
   const [approvedAmount, setApprovedAmount] = useState(""); // New state for approved amount
   const [autoxTokenContractInstance, setAutoxTokenContractInstance] = useState(null); // New state for autoxTokenContractInstance
 
   const { signer, provider, contracts, connectWallet } = useWallet();
 
-  // const contractAddressDPoS = "0xACA9492685809C431995e9591364165001A59583"; // replace with your deployed AutonomixDPoS address
   const autoxTokenAddress = contractAddress.AUTOXToken;
 
   useEffect(() => {
     if (signer && contracts && contracts.dpos) {
       setAutoxTokenContractInstance(new ethers.Contract(autoxTokenAddress, AUTOXTokenABI, signer));
     } else {
-      // If signer or dposContract is not available, try to connect wallet
       connectWallet();
     }
   }, [signer, contracts, connectWallet]);
 
-  useEffect(() => {
-    if (contracts?.dpos) {
-      loadValidators();
-    }
-  }, [contracts?.dpos]);
-
-  useEffect(() => {
-    console.log("Debug - signer:", signer);
-    console.log("Debug - autoxTokenContractInstance:", autoxTokenContractInstance);
-    console.log("Debug - approvedAmount:", approvedAmount);
-    console.log("Debug - contracts:", contracts);
-    console.log("Debug - contracts?.dpos:", contracts?.dpos);
-    console.log("Debug - Button disabled status:", !autoxTokenContractInstance || !signer || !approvedAmount);
-  }, [signer, autoxTokenContractInstance, approvedAmount, contracts]);
-
-  const loadValidators = async () => {
+  const loadValidators = useCallback(async () => {
     try {
       if (!signer) {
         setMessage("Wallet not connected or signer not available.");
@@ -72,7 +56,7 @@ const Validators = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [signer, contracts?.dpos]);
 
   const addTestValidator = async () => {
     try {
@@ -83,7 +67,6 @@ const Validators = () => {
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      // const dposContract = new ethers.Contract(contractAddressDPoS, DPoSABI.abi, signer);
 
       // ✅ this function exists in your contract
       const tx = await contracts.dpos.addTestValidator(account);
@@ -157,6 +140,94 @@ const Validators = () => {
     }
   };
 
+  const handleElectValidators = async () => {
+    try {
+      if (!contracts?.dpos) {
+        setMessage("DPoS contract not available.");
+        return;
+      }
+      setLoading(true);
+      setMessage("Electing validators...");
+
+      const tx = await contracts.dpos.electValidators();
+      await tx.wait();
+
+      setMessage("Validators elected successfully!");
+      loadValidators(); // Refresh the list after election
+    } catch (err) {
+      console.error("Error electing validators:", err);
+      setMessage("Error electing validators (check console).");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDistributeRewards = async () => {
+    try {
+      if (!contracts?.dpos) {
+        setMessage("DPoS contract not available.");
+        return;
+      }
+      setLoading(true);
+      setMessage("Distributing rewards...");
+
+      const tx = await contracts.dpos.distributeRewards();
+      await tx.wait();
+
+      setMessage("Rewards distributed successfully!");
+      // Optionally refresh validator data or balances here if needed
+    } catch (err) {
+      console.error("Error distributing rewards:", err);
+      setMessage("Error distributing rewards (check console).");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyData = async (dataHash, valid) => {
+    try {
+      if (!contracts?.dpos) {
+        setMessage("DPoS contract not available.");
+        return;
+      }
+      setLoading(true);
+      setMessage("Verifying data...");
+
+      const tx = await contracts.dpos.verifyData(dataHash, valid);
+      await tx.wait();
+
+      setMessage(`Data verified successfully! Hash: ${dataHash}, Valid: ${valid}`);
+      loadDataSubmissions(); // Refresh data submissions after verification
+    } catch (err) {
+      console.error("Error verifying data:", err);
+      setMessage("Error verifying data (check console).");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New function to load data submissions
+  const loadDataSubmissions = useCallback(async () => {
+    if (!contracts?.dataShare) {
+      console.log("DataShare contract not available.");
+      return;
+    }
+    try {
+      const allData = await contracts.dataShare.getAllData();
+      const unverifiedData = allData.filter(data => !data.verified);
+      setDataSubmissions(unverifiedData);
+    } catch (err) {
+      console.error("Error loading data submissions:", err);
+    }
+  }, [contracts?.dataShare]);
+
+  useEffect(() => {
+    if (contracts) {
+      loadValidators();
+      loadDataSubmissions(); // Load data submissions when contracts are available
+    }
+  }, [contracts, loadValidators, loadDataSubmissions]);
+
   return (
     <div className="min-h-screen bg-soft-gradient bg-cover text-violet font-sans p-8">
       <h2 className="text-4xl md:text-5xl font-bold text-blush font-heading mb-6">Validators Dashboard</h2>
@@ -177,6 +248,57 @@ const Validators = () => {
         >
           Add Test Validator
         </button>
+
+        <button
+          onClick={handleElectValidators}
+          className="px-6 py-3 bg-green-500 text-white rounded-2xl font-semibold hover:brightness-110 transition"
+          disabled={loading}
+        >
+          Elect Validators
+        </button>
+
+        <button
+          onClick={handleDistributeRewards}
+          className="px-6 py-3 bg-blue-500 text-white rounded-2xl font-semibold hover:brightness-110 transition"
+          disabled={loading}
+        >
+          Distribute Rewards
+        </button>
+      </div>
+
+      {/* Unverified Data Submissions Section */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4">Unverified Data Submissions</h2>
+        {dataSubmissions.length === 0 ? (
+          <p>No unverified data submissions found.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dataSubmissions.map((data, index) => (
+              <div key={index} className="bg-white p-4 rounded-lg shadow-md">
+                <p className="font-semibold">Car Address: {data.carAddress}</p>
+                <p>Metadata: {data.metadata}</p>
+                <p className="break-all">Data Hash: {data.dataHash}</p>
+                <p>Timestamp: {new Date(Number(data.timestamp) * 1000).toLocaleString()}</p>
+                <div className="mt-4 flex space-x-2">
+                  <button
+                    onClick={() => handleVerifyData(data.dataHash, true)}
+                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:brightness-110 transition"
+                    disabled={loading}
+                  >
+                    Verify (True)
+                  </button>
+                  <button
+                    onClick={() => handleVerifyData(data.dataHash, false)}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:brightness-110 transition"
+                    disabled={loading}
+                  >
+                    Verify (False)
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Approve Tokens Section */}
