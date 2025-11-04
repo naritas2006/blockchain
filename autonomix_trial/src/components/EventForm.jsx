@@ -23,6 +23,7 @@ export default function EventForm({ onEventSubmitted }) {
       });
       // Hash the eventData to get a bytes32 hash
       const dataHashBytes32 = ethers.keccak256(ethers.toUtf8Bytes(eventData));
+      console.log("EventForm: Generated dataHashBytes32:", dataHashBytes32); // Add this line
 
       // Send transaction: metadata is vehicleId (string), dataHash is the unique hash
       const tx = await contracts.dataShare.uploadData(eventData, dataHashBytes32);

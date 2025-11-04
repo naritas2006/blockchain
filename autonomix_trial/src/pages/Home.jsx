@@ -52,17 +52,6 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Stats */}
-      <motion.section
-        className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto px-6"
-        {...fadeIn}
-        transition={{ delay: 0.2, duration: 0.8 }}
-      >
-        <StatCard label="Total Cars Connected" value="38" />
-        <StatCard label="Total Events Logged" value="112" />
-        <StatCard label="Top Zone" value="Zone B" />
-      </motion.section>
-
       {/* How It Works (Uiverse Cards) */}
       <motion.section
         className="mt-28 max-w-6xl mx-auto text-center px-4"
@@ -136,18 +125,6 @@ export default function Home() {
         </button>
       </footer>
     </div>
-  );
-}
-
-function StatCard({ label, value }) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.03 }}
-      className="bg-white bg-opacity-80 backdrop-blur-lg border border-borderLight p-6 rounded-2xl shadow-md text-center"
-    >
-      <p className="text-sm text-thistle">{label}</p>
-      <p className="text-3xl font-bold text-blush">{value}</p>
-    </motion.div>
   );
 }
 

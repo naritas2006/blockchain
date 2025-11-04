@@ -24,6 +24,8 @@ export default function LiveAlertsFeed() {
       const allData = await contracts.dataShare.getAllData();
       console.log("📦 All Data Blocks for Live Alerts Feed:", allData);
 
+      const verifiedItems = JSON.parse(localStorage.getItem('verifiedDataHashes') || '[]');
+
       const formatted = allData.map((d) => {
         let parsedMetadata = {};
         try {
@@ -33,13 +35,18 @@ export default function LiveAlertsFeed() {
           parsedMetadata = { eventType: 'N/A', vehicleId: d.metadata };
         }
 
+        const verifiedItem = verifiedItems.find(item => item.dataHash === d.dataHash);
+        const isVerified = !!verifiedItem;
+        const verificationTimestamp = verifiedItem ? verifiedItem.timestamp : undefined;
+
         return {
           carAddress: d.carAddress,
           eventType: parsedMetadata.eventType || 'N/A',
           vehicleId: parsedMetadata.vehicleId || 'N/A',
           dataHash: d.dataHash,
           timestamp: new Date(Number(d.timestamp) * 1000),
-          verified: d.verified,
+          verified: isVerified, // Set verified status based on localStorage
+          verificationTimestamp: verificationTimestamp, // Assign verification timestamp
           ipfsHash: d.ipfsHash, // ipfsHash is now the hash of the eventData
         };
       });
@@ -85,12 +92,27 @@ export default function LiveAlertsFeed() {
       filtered = filtered.filter((b) => now - b.timestamp.getTime() < 604800000);
     }
 
-    // Apply verified filter
+    // Apply verified filter and then sort
     if (verifiedFilter === 'verified') {
       filtered = filtered.filter((b) => b.verified);
     } else if (verifiedFilter === 'unverified') {
       filtered = filtered.filter((b) => !b.verified);
     }
+
+    // Sort by verification timestamp (verified first, then by timestamp)
+    filtered.sort((a, b) => {
+      if (a.verified && !b.verified) return -1; // a is verified, b is not, a comes first
+      if (!a.verified && b.verified) return 1;  // b is verified, a is not, b comes first
+
+      // If both are verified or both are unverified, sort by timestamp
+      if (a.verified && b.verified) {
+        // Both verified, sort by verificationTimestamp (newest first)
+        return new Date(b.verificationTimestamp).getTime() - new Date(a.verificationTimestamp).getTime();
+      } else {
+        // Both unverified, sort by original timestamp (newest first)
+        return b.timestamp.getTime() - a.timestamp.getTime();
+      }
+    });
 
     setFilteredDataBlocks(filtered);
   }, [dataBlocks, eventTypeFilter, vehicleIdFilter, timeRangeFilter, verifiedFilter]); // Add verifiedFilter to dependencies
@@ -164,6 +186,9 @@ export default function LiveAlertsFeed() {
               <p>Car Address: {block.carAddress}</p>
               <p>Timestamp: {block.timestamp.toLocaleString()}</p>
               <p>Verified: {block.verified ? '✅ Yes' : '❌ No'}</p>
+              {block.verified && block.verificationTimestamp && (
+                <p>Verification Time: {new Date(block.verificationTimestamp).toLocaleString()}</p>
+              )}
               {block.ipfsHash && <p>IPFS Hash: {block.ipfsHash}</p>}
             </div>
           ))

@@ -38,15 +38,43 @@ export default function CarDashboard() {
       const allData = await dataSharing.getAllData();
       console.log("📦 All Data Blocks:", allData);
 
+      // Remove localStorage and fetch on-chain verifications
+      // Get DataVerified events from the chain
+      const dposContract = contracts.dpos;
+      // Get all on-chain DataVerified events
+      const dataVerifiedEvents = await dposContract.queryFilter(dposContract.filters.DataVerified());
+
+      // Map: dataHash => { txHash, blockNumber, timestamp }
+      const dataHashToVerification = {};
+      for (const ev of dataVerifiedEvents) {
+        if (ev.args && ev.args.dataHash && ev.args.success) { // success==true means verified
+          dataHashToVerification[ev.args.dataHash] = {
+            txHash: ev.transactionHash,
+            blockNumber: ev.blockNumber,
+            // timestamp will be filled in after block fetch
+          };
+        }
+      }
+      // Fetch block timestamps for relevant verifications
+      for (const key in dataHashToVerification) {
+        const block = await provider.getBlock(dataHashToVerification[key].blockNumber);
+        dataHashToVerification[key].timestamp = block.timestamp * 1000;
+      }
+
       // Convert into readable format
-      const formatted = allData.map((d) => {
+      let formatted = allData.map((d) => {
         let parsedMetadata = {};
         try {
           parsedMetadata = JSON.parse(d.metadata);
         } catch {
-          // Fallback if metadata isn't JSON, though it should be now.
           parsedMetadata = { eventType: 'N/A', vehicleId: d.metadata };
         }
+
+        // Check if this dataHash was verified on-chain
+        const verification = dataHashToVerification[d.dataHash];
+        const isVerified = !!verification;
+        const verificationTimestamp = verification ? verification.timestamp : undefined;
+        const verificationTx = verification ? verification.txHash : undefined;
 
         return {
           carAddress: d.carAddress,
@@ -54,12 +82,24 @@ export default function CarDashboard() {
           vehicleId: parsedMetadata.vehicleId || 'N/A',
           dataHash: d.dataHash,
           timestamp: new Date(Number(d.timestamp) * 1000),
-          verified: d.verified,
-          ipfsHash: d.ipfsHash, // ipfsHash is now the hash of the eventData
+          verified: isVerified,
+          verificationTimestamp: verificationTimestamp,
+          verificationTx: verificationTx,
+          ipfsHash: d.ipfsHash,
         };
       });
 
-      setDataBlocks(formatted);
+      // Sort submissions by verificationTimestamp, putting verified items first and then by their verification time
+      const sortedEvents = formatted.sort((a, b) => {
+        if (a.verified && !b.verified) return -1;
+        if (!a.verified && b.verified) return 1;
+        if (a.verified && b.verified) {
+          return new Date(a.verificationTimestamp) - new Date(b.verificationTimestamp); // Oldest first
+        }
+        return new Date(a.timestamp) - new Date(b.timestamp); // Oldest first for unverified items
+      });
+
+      setDataBlocks(sortedEvents);
     } catch (error) {
       console.error("❌ Error fetching data:", error);
       alert("Error fetching data records!");
@@ -159,36 +199,23 @@ const uploadData = async (metadata, ipfsHash) => {
       fetchEvents();
       fetchDposTransactions();
 
-      const dataShareContract = contracts.dataShare;
-
-      const onDataUploaded = (carAddress, metadata, dataHash, verified, timestamp, ipfsHash) => {
-        console.log("⚡️ New DataUploaded event:", { carAddress, metadata, dataHash, verified, timestamp, ipfsHash });
-
-        let parsedMetadata = {};
-        try {
-          parsedMetadata = JSON.parse(metadata);
-        } catch {
-          parsedMetadata = { eventType: 'N/A', vehicleId: metadata };
-        }
-
-        setDataBlocks((prevBlocks) => [
-          {
-            carAddress,
-            eventType: parsedMetadata.eventType || 'N/A',
-            vehicleId: parsedMetadata.vehicleId || 'N/A',
-            dataHash,
-            timestamp: new Date(Number(timestamp) * 1000),
-            verified,
-            ipfsHash,
-          },
-          ...prevBlocks,
-        ]);
+      const dposContract = contracts.dpos;
+      // Real-time listener for on-chain verifications
+      const onDataVerified = async (dataHash, success, event) => {
+        if (!success) return;
+        // Fetch block for human timestamp
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const block = await provider.getBlock(event.blockNumber);
+        setDataBlocks((prevBlocks) => prevBlocks.map(b =>
+          b.dataHash === dataHash
+            ? { ...b, verified: true, verificationTimestamp: block.timestamp * 1000, verificationTx: event.transactionHash }
+            : b
+        ))
       };
-
-      dataShareContract.on('DataUploaded', onDataUploaded);
+      dposContract.on('DataVerified', onDataVerified);
 
       return () => {
-        dataShareContract.off('DataUploaded', onDataUploaded);
+        dposContract.off('DataVerified', onDataVerified);
       };
     }
   }, [wallet, contracts, fetchEvents, fetchDposTransactions]);
@@ -232,6 +259,7 @@ const uploadData = async (metadata, ipfsHash) => {
           {/* <MapSimulation dataBlocks={dataBlocks} /> */}
           <div className="mt-8">
             <h2 className="text-2xl font-bold text-center text-blush mb-4">📦 Uploaded Data Records</h2>
+            <p className="text-center text-violet mb-4">Verified Blocks: {dataBlocks.filter(block => block.verified).length}</p>
 
             {loading ? (
               <p className="text-center text-white">Loading data records...</p>
@@ -247,6 +275,14 @@ const uploadData = async (metadata, ipfsHash) => {
                       <p>Car Address: {block.carAddress}</p>
                       <p>Timestamp: {block.timestamp.toLocaleString()}</p>
                       <p>Verified: {block.verified ? '✅ Yes' : '❌ No'}</p>
+                      {block.verified && block.verificationTimestamp && (
+                        <p>Verification Time: {new Date(block.verificationTimestamp).toLocaleString()}</p>
+                      )}
+                      {block.verified && block.verificationTx && (
+                        <p>
+                          Tx: <a href={`https://sepolia.etherscan.io/tx/${block.verificationTx}`} target="_blank" rel="noopener noreferrer" className="underline text-blue-600">{block.verificationTx.slice(0,10)}...</a>
+                        </p>
+                      )}
                       {block.ipfsHash && <p>IPFS Hash: {block.ipfsHash}</p>}
                     </div>
                   ))
