@@ -16,10 +16,18 @@ export default function Validators() {
   const [approvedAmount, setApprovedAmount] = useState(""); // New state for approved amount
   const [autoxTokenContractInstance, setAutoxTokenContractInstance] = useState(null); // New state for autoxTokenContractInstance
   const [loadingValidators, setLoadingValidators] = useState(false); // New state for loading validators
+  const [ownerAddress, setOwnerAddress] = useState("");
+  const [connectedAddress, setConnectedAddress] = useState("");
+  const [tokenDecimals, setTokenDecimals] = useState(18);
+  const [allowance, setAllowance] = useState(0n);
+  const [balance, setBalance] = useState(0n);
+  const [electionTxHash, setElectionTxHash] = useState("");
+  const [rewardsTxHash, setRewardsTxHash] = useState("");
 
   const { signer, provider, contracts, connectWallet, wallet } = useWallet();
 
   const autoxTokenAddress = contractAddress.AUTOXToken;
+  const tokenAbi = Array.isArray(AUTOXTokenABI?.abi) ? AUTOXTokenABI.abi : AUTOXTokenABI;
 
   const fadeIn = {
     initial: { opacity: 0, y: 20 },
@@ -29,11 +37,41 @@ export default function Validators() {
 
   useEffect(() => {
     if (signer && contracts && contracts.dpos) {
-      setAutoxTokenContractInstance(new ethers.Contract(autoxTokenAddress, AUTOXTokenABI, signer));
+      setAutoxTokenContractInstance(new ethers.Contract(autoxTokenAddress, tokenAbi, signer));
     } else {
       connectWallet();
     }
   }, [signer, contracts, connectWallet]);
+
+  useEffect(() => {
+    const fetchInfo = async () => {
+      try {
+        if (!signer || !contracts?.dpos || !autoxTokenContractInstance) return;
+        const addr = await signer.getAddress();
+        setConnectedAddress(addr);
+        let owner = "";
+        try {
+          if (contracts.dpos.owner) {
+            owner = await contracts.dpos.owner();
+          }
+        } catch (e) {
+          console.warn("owner() not available on DPoS:", e);
+        }
+        setOwnerAddress(owner || "");
+        const dec = await autoxTokenContractInstance.decimals();
+        setTokenDecimals(Number(dec));
+        const [bal, allow] = await Promise.all([
+          autoxTokenContractInstance.balanceOf(addr),
+          autoxTokenContractInstance.allowance(addr, contracts.dpos.target)
+        ]);
+        setBalance(bal);
+        setAllowance(allow);
+      } catch (e) {
+        console.error("Failed to fetch token/owner info:", e);
+      }
+    };
+    fetchInfo();
+  }, [signer, contracts?.dpos, autoxTokenContractInstance]);
 
   const loadValidators = useCallback(async () => {
     try {
@@ -99,24 +137,29 @@ export default function Validators() {
         console.log("Debug - handleStake: contracts?.dpos is null or undefined");
         return;
       }
+      if (!autoxTokenContractInstance) {
+        setMessage("AUTOXToken contract not available.");
+        return;
+      }
       if (!stakeAmount || isNaN(stakeAmount) || parseFloat(stakeAmount) <= 0) {
         setMessage("Please enter a valid stake amount.");
         return;
       }
 
-      // Convert stakeAmount to Wei
-      const amountInWei = ethers.parseUnits(stakeAmount, "ether");
+      // Convert stakeAmount to token units using tokenDecimals
+      const amountInUnits = ethers.parseUnits(stakeAmount, tokenDecimals);
 
       // Check current allowance
-      const currentAllowance = await autoxTokenContractInstance.allowance(await signer.getAddress(), contracts.dpos.target);
-      if (currentAllowance < amountInWei) {
+      const userAddr = await signer.getAddress();
+      const currentAllowance = await autoxTokenContractInstance.allowance(userAddr, contracts.dpos.target);
+      if (currentAllowance < amountInUnits) {
         setMessage("Insufficient allowance. Please approve more tokens.");
         return;
       }
 
       // The stake function in AutonomixDPoS.sol takes _delegate and _amount
       // We'll use the connected account as the delegate for simplicity here.
-      const tx = await contracts.dpos.stake(await signer.getAddress(), amountInWei);
+      const tx = await contracts.dpos.stake(userAddr, amountInUnits);
       await tx.wait();
 
       setMessage(`Successfully staked ${stakeAmount} tokens!`);
@@ -135,15 +178,18 @@ export default function Validators() {
     }
 
     try {
-      const amountToApprove = ethers.parseUnits(approvedAmount, 18); // Assuming 18 decimals
+      const amountToApprove = ethers.parseUnits(approvedAmount, tokenDecimals);
       console.log("Approving DPoS contract at address:", contracts.dpos.target);
       const tx = await autoxTokenContractInstance.connect(signer).approve(contracts.dpos.target, amountToApprove);
       await tx.wait();
+      const userAddr = await signer.getAddress();
+      const newAllowance = await autoxTokenContractInstance.allowance(userAddr, contracts.dpos.target);
+      setAllowance(newAllowance);
       console.log("Tokens approved successfully!");
-      alert("Tokens approved successfully!");
+      setMessage("Tokens approved successfully!");
     } catch (error) {
       console.error("Error approving tokens:", error);
-      alert(`Error approving tokens: ${error.message}`);
+      setMessage(`Error approving tokens: ${error.message}`);
     }
   };
 
@@ -157,6 +203,7 @@ export default function Validators() {
       setMessage("Electing validators...");
 
       const tx = await contracts.dpos.electValidators();
+      setElectionTxHash(tx.hash);
       await tx.wait();
 
       setMessage("Validators elected successfully!");
@@ -179,6 +226,7 @@ export default function Validators() {
       setMessage("Distributing rewards...");
 
       const tx = await contracts.dpos.distributeRewards();
+      setRewardsTxHash(tx.hash);
       await tx.wait();
 
       setMessage("Rewards distributed successfully!");
@@ -336,6 +384,16 @@ export default function Validators() {
         </div>
       ) : (
         <>
+          {/* Connection Info */}
+          <div className="bg-white bg-opacity-70 backdrop-blur-lg p-6 rounded-xl shadow-lg mb-8">
+            <h2 className="text-2xl font-semibold text-blush mb-4">Connection Info</h2>
+            <div className="space-y-2 text-violet">
+              <p><span className="font-semibold">Connected Wallet:</span> {connectedAddress || wallet}</p>
+              {ownerAddress && (<p><span className="font-semibold">DPoS Owner:</span> {ownerAddress}</p>)}
+              <p><span className="font-semibold">AUTOX Decimals:</span> {tokenDecimals}</p>
+              <p><span className="font-semibold">Balance:</span> {ethers.formatUnits(balance ?? 0n, tokenDecimals)} AUTOX | <span className="font-semibold">Allowance:</span> {ethers.formatUnits(allowance ?? 0n, tokenDecimals)} AUTOX</p>
+            </div>
+          </div>
           {/* Validator Actions */}
           <div className="bg-white bg-opacity-70 backdrop-blur-lg p-6 rounded-xl shadow-lg mb-8">
             <h2 className="text-2xl font-semibold text-blush mb-4">Validator Actions</h2>
@@ -346,18 +404,41 @@ export default function Validators() {
               >
                 ➕ Add Test Validator
               </button>
-              <button
-                onClick={handleStake}
-                className="px-6 py-3 bg-blush text-white rounded-lg hover:brightness-110 transition font-semibold"
-              >
-                💰 Stake Tokens
-              </button>
-              <button
-                onClick={handleApproveTokens}
-                className="px-6 py-3 bg-thistle text-white rounded-lg hover:brightness-110 transition font-semibold"
-              >
-                ✅ Approve Tokens
-              </button>
+
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  placeholder={`Stake amount (${tokenDecimals} decimals)`}
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(e.target.value)}
+                  className="px-4 py-2 border border-violet rounded"
+                />
+                <button
+                  onClick={handleStake}
+                  className="px-6 py-3 bg-blush text-white rounded-lg hover:brightness-110 transition font-semibold"
+                >
+                  💰 Stake Tokens
+                </button>
+                <p className="text-sm text-violet">Balance: {ethers.formatUnits(balance ?? 0n, tokenDecimals)} AUTOX</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  placeholder={`Approve amount (${tokenDecimals} decimals)`}
+                  value={approvedAmount}
+                  onChange={(e) => setApprovedAmount(e.target.value)}
+                  className="px-4 py-2 border border-violet rounded"
+                />
+                <button
+                  onClick={handleApproveTokens}
+                  className="px-6 py-3 bg-thistle text-white rounded-lg hover:brightness-110 transition font-semibold"
+                >
+                  ✅ Approve Tokens
+                </button>
+                <p className="text-sm text-violet">Allowance: {ethers.formatUnits(allowance ?? 0n, tokenDecimals)} AUTOX</p>
+              </div>
+
               <button
                 onClick={handleElectValidators}
                 className="px-6 py-3 bg-green-500 text-white rounded-lg hover:brightness-110 transition font-semibold"
@@ -373,6 +454,27 @@ export default function Validators() {
             </div>
           </div>
 
+          {/* Recent Contract Actions */}
+          <div className="bg-white bg-opacity-70 backdrop-blur-lg p-6 rounded-xl shadow-lg mb-8">
+            <h2 className="text-2xl font-semibold text-blush mb-4">Recent Contract Actions</h2>
+            <div className="space-y-2 text-violet">
+              <p><span className="font-semibold">Election Tx:</span> {electionTxHash ? (
+                <a href={`https://sepolia.etherscan.io/tx/${electionTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blush underline">
+                  {electionTxHash.slice(0, 10)}...{electionTxHash.slice(-8)}
+                </a>
+              ) : (
+                "\u2014"
+              )}</p>
+              <p><span className="font-semibold">Rewards Tx:</span> {rewardsTxHash ? (
+                <a href={`https://sepolia.etherscan.io/tx/${rewardsTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blush underline">
+                  {rewardsTxHash.slice(0, 10)}...{rewardsTxHash.slice(-8)}
+                </a>
+              ) : (
+                "\u2014"
+              )}</p>
+            </div>
+          </div>
+
           {/* Current Validators */}
           <div className="bg-white bg-opacity-70 backdrop-blur-lg p-6 rounded-xl shadow-lg mb-8">
             <h2 className="text-2xl font-semibold text-blush mb-4">Current Validators</h2>
@@ -382,9 +484,13 @@ export default function Validators() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {validators.map((validator, index) => (
                   <div key={index} className="bg-light-violet p-4 rounded-lg shadow-md">
-                    <p className="font-semibold">Address: {validator.address}</p>
-                    <p>Stake: {validator.stake} AUTOX</p>
-                    <p>Is Elected: {validator.isElected ? '✅ Yes' : '❌ No'}</p>
+                    <p className="font-semibold">Address: {typeof validator === "string" ? validator : (validator.address ?? validator)}</p>
+                    {typeof validator !== "string" && validator.stake !== undefined && (
+                      <p>Stake: {validator.stake} AUTOX</p>
+                    )}
+                    {typeof validator !== "string" && validator.isElected !== undefined && (
+                      <p>Is Elected: {validator.isElected ? '✅ Yes' : '❌ No'}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -405,7 +511,7 @@ export default function Validators() {
                     <p className="font-semibold">Event Type: {submission.eventType}</p>
                     <p>Vehicle ID: {submission.vehicleId}</p>
                     <p>Car Address: {submission.carAddress}</p>
-                    <p>Timestamp: {submission.timestamp.toLocaleString()}</p>
+                    <p>Timestamp: {submission.timestamp ? submission.timestamp.toLocaleString() : "—"}</p>
                     <p>Data Hash: {submission.dataHash}</p>
                     <p>IPFS Hash: {submission.ipfsHash}</p>
                     <p>Verified: {submission.verified ? '✅ Yes' : '❌ No'}</p>
